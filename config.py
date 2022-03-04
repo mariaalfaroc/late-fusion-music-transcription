@@ -39,8 +39,7 @@ def set_scenario(value: str):
     global folds_dir
     global output_dir
     scenario = value
-    # folds_dir = base_dir / "5-crossval" / f"Scenario{scenario}"
-    folds_dir = base_dir / "new-5-crossval" / f"Scenario{scenario}"
+    folds_dir = base_dir / "5-crossval" / f"Scenario{scenario}"
     output_dir = base_dir / "Experiments" / f"Scenario{scenario}"
 
 def set_data_globals():
