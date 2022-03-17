@@ -1,6 +1,6 @@
-# Multimodal image and audio music transcription
+# Late multimodal fusion for image and audio music transcription
 
-**María Alfaro-Contreras**, Jose J Valero-Mas, Jorge Calvo-Zaragoza, and Jose M Iñesta<br />
+**María Alfaro-Contreras**, Jose J Valero-Mas, Jose M Iñesta, and Jorge Calvo-Zaragoza<br />
 
 Dataset used: **Camera-PrIMuS**. Available [here](https://grfia.dlsi.ua.es/primus/).
 The partitions used can be found in the 5-crossval.tgz file.
