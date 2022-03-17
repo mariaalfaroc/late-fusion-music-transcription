@@ -34,11 +34,11 @@ from kaldi_preprocessing import parse_kaldi_groundtruth
 # "Anchor" -> The Symbol Error Rate of the SN-SN pair is 0.
 # "Combine" -> The Symbol Error Rate of the SN-SN pair is not 0, but the subnetworks have some elements in common (perform the intersection between them to know so)
 # "Insert/Delete -> The Symbol Error Rate of the SN-SN pair is not 0 and the subnetworks have nothing in common (perform the intersection between them to know so)
+# Tie breaking rule for insertion or deletion -> We look for the highest probability and follow the threshold policy of the paper.
 # We perform this subnetwork classification in both directions of the best alignment path, from left to right and from right to left.
 # We take only as "Anchor" subnetworks those where both searches coincide.
 # Tie breaking rule for one-to-many matches: Anchor > Combine > Insert/Delete. That is if a subnetwork is classified as both "Anchor" and "Insert/Delete", 
 # we keep the label that minimizes the alignment cost -> "Anchor" label.
-# Tie breaking rule for insertion or deletion -> We look for the highest probability and follow the threshold policy of the paper.
 # ----
 # THIRD PART -> Composition of the final confusion network
 # We go through the best alignment path and insert first only "Anchor" subnetworks and then the rest. 
@@ -100,10 +100,35 @@ def dtw(cn1, cn2):
 
 # -------------------- SECOND PART
 
+# Utility function for performing tie breaking rule over subnetworks classified as "Insert/Delete"
+def insertion_or_deletion_labeling(sn, modality):
+    sn_type = ""
+    insert_threshold = 0.25 # Most probable class of the second modality exceeds this threshold -> Insert
+    delete_threshold = 0.75 # Most probable class of the first modality does not reach this threshold -> Delete
+    # sn = [class-1 prob-1 class-2 prob-2] -> sn_dict = {"class-1": prob-1, "class-2": prob-2}
+    sn_dict = dict(zip(sn[0::2], sn[1::2]))
+    # Find the most probable class of the subnetwork
+    most_prob_c = max(sn_dict.values())
+    if modality==1:
+        if most_prob_c > delete_threshold:
+            # Insert
+            sn_type = "Insert"
+        else:
+            # Delete
+            sn_type = "Delete"
+    elif modality==2:
+        if most_prob_c > insert_threshold:
+            # Insert
+            sn_type = "Insert"
+        else:
+            # Delete
+            sn_type = "Delete"
+    return sn_type
+
 # Utility function for labeling subnetworks as either "Anchor", or "Combine", or "Insert/Delete"
 def subnetworks_labeling(cn1, cn2, cost_matrix, path):
-    cn1_type = {"Anchor": [], "Combine": [], "Insert/Delete": []}
-    cn2_type = {"Anchor": [], "Combine": [], "Insert/Delete": []}
+    cn1_type = {"Anchor": [], "Combine": [], "Insert": [], "Delete": []}
+    cn2_type = {"Anchor": [], "Combine": [], "Insert": [], "Delete": []}
     # We iterate over the DTW path
     # Ex.: i=3, j=4 -> This indicates that SN3 from CN1 aligns with SN4 from CN2
     for i, j in path:
@@ -114,7 +139,7 @@ def subnetworks_labeling(cn1, cn2, cost_matrix, path):
             # The two subnetworks agree, i.e., their hypothesis match (we only take into account the classes and not their associated probabilities)
             # This means the cost (the value of the Symbol Error Rate) is 0
             # We classify them as "Anchor"
-            sn_type = "Anchor"
+            sn1_type = sn2_type = "Anchor"
         else:
             # The two subnetworks disagree, i.e., their hypothesis do not match
             # They may be of type "Combine" or of type "Insert/Delete"
@@ -124,31 +149,14 @@ def subnetworks_labeling(cn1, cn2, cost_matrix, path):
             if value == 0:
                 # They partially disagree -> they have some common ground
                 # We classify them as "Combine"
-                sn_type = "Combine"
+                sn1_type = sn2_type = "Combine"
             else:
                 # They completely disagree
-                # We classify them as "Insert/Delete"
-                sn_type = "Insert/Delete"
-        cn1_type[sn_type].append(i)    
-        cn2_type[sn_type].append(j) 
+                # We classify them as "Insert" or "Delete"
+                sn1_type, sn2_type = insertion_or_deletion_labeling(cn1[i], modality=1), insertion_or_deletion_labeling(cn2[j], modality=2)
+        cn1_type[sn1_type].append(i)    
+        cn2_type[sn2_type].append(j) 
     return cn1_type, cn2_type
-
-# Utility function for performing tie breaking rule over subnetworks classified as "Insert/Delete"
-def insertion_or_deletion_labeling(sn):
-    sn_type = ""
-    insert_threshold = 0.25 # Most probable class exceeds this threshold -> Insert
-    delete_threshold = 0.75 # Most probable class does not reach this threshold -> Delete
-    # sn = [class-1 prob-1 class-2 prob-2] -> sn_dict = {"class-1": prob-1, "class-2": prob-2}
-    sn_dict = dict(zip(sn[0::2], sn[1::2]))
-    # Find the most probable class of the subnetwork
-    most_prob_c = max(sn_dict.values())
-    if most_prob_c > insert_threshold and most_prob_c > delete_threshold:
-        # Insert
-        sn_type = "Insert"
-    else:
-        # Delete
-        sn_type = "Delete"
-    return sn_type
 
 # Utility function for reversing a "cn_type" dictionary
 # Example:
@@ -163,8 +171,8 @@ def reverse_dict(cn_type):
 
 # Utility function for merging the labeling in both directions of a confusion network
 def subnetworks_labeling_alignment(cn, cn_type_1, cn_type_2):
-    # Ex.: cn_type_x =  {"Anchor": [1, 2], "Combine": [3], "Insert/Delete": [4, 5]}
-    types = {"Anchor": 100, "Combine": 50, "Insert/Delete": 0}
+    # Ex.: cn_type_x =  {"Anchor": [1, 2], "Combine": [3], "Insert": [4], "Delete": [5]}
+    types = {"Anchor": 100, "Combine": 50, "Insert": 0, "Delete": 0}
     # FIRST STEP
     # We take only as "Anchor" subnetworks those where both searches coincide
     cn_type = dict()
@@ -189,20 +197,7 @@ def subnetworks_labeling_alignment(cn, cn_type_1, cn_type_2):
                         else:
                             cn_type[i].remove(sn)
                             # print(f"Now, subnetwork {sn} is classified only as {j}")
-    # THIRD STEP
-    # Tie breaking rule for insertion or deletion
-    new_cn_type = cn_type.copy()
-    del new_cn_type["Insert/Delete"]
-    new_cn_type["Insert"] = []
-    new_cn_type["Delete"] = []
-    for id_sn in cn_type["Insert/Delete"]:
-        sn_type = insertion_or_deletion_labeling(cn[id_sn])
-        new_cn_type[sn_type].append(id_sn)
-    if new_cn_type["Insert"] == []:
-        del new_cn_type["Insert"]
-    if new_cn_type["Delete"] == []:
-        del new_cn_type["Delete"]
-    return reverse_dict(new_cn_type)
+    return reverse_dict(cn_type)
 
 # Utility function for performing a subnetworks based alignment
 def subnetworks_based_alignment(cn1, cn2, cost_matrix, path):
@@ -221,11 +216,12 @@ def set_weight_factor(value=0.5):
     weight_factor = round(value, 1)
 
 # Utility function for computing the final probability of a class given their probabilities in other subnetworks (used when those subnetworks are combined)
-def smooth_probability(prob_c_sn1, prob_c_sn2, n):
+def smooth_probability(prob_c_sn1, prob_c_sn2, n1, n2):
     granularity_factor = 10e-4
+    prob_c_sn1 = (prob_c_sn1 + granularity_factor) / (1 + n1 * granularity_factor)
+    prob_c_sn2 = (prob_c_sn2 + granularity_factor) / (1 + n2 * granularity_factor)
     # weight_factor = 0.5
-    prob = pow(prob_c_sn1, weight_factor) * pow(prob_c_sn2, round(1 - weight_factor, 1))
-    return (prob + granularity_factor) / (1 + n * granularity_factor)
+    return pow(prob_c_sn1, weight_factor) * pow(prob_c_sn2, round(1 - weight_factor, 1))
 
 # Utility function for combining two subnetworks: f(sn1, sn2) -> sn
 def combine_subnetworks(sn1, sn2):
@@ -236,9 +232,9 @@ def combine_subnetworks(sn1, sn2):
     # If both sn1 and sn2 are of type "Anchor", they both have the same classes -> sn1_c == sn2_c == sn_c
     # If both sn1 and sn2 are of type "Combine" -> sn_c == sn1_c U sn2_c
     sn_c = set(sn1[0::2] + sn2[0::2])
-    n = len(sn_c)
+    n1, n2 = len(sn1[0::2]), len(sn2[0::2])
     # Smooth and normalize the probabilities of the classes of the combined subnetwork
-    probs = [smooth_probability(sn1_dict.get(c, 0), sn2_dict.get(c, 0), n) for c in sn_c]
+    probs = [smooth_probability(sn1_dict.get(c, 0), sn2_dict.get(c, 0), n1, n2) for c in sn_c]
     probs_normalized = [p / sum(probs) for p in probs]
     # Create the combined subnetwork
     sn = []

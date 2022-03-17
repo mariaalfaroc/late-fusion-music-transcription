@@ -9,7 +9,7 @@ from experimentation import k_fold_experiment, k_fold_test_experiment
 
 from word_graphs.smith_waterman import k_fold_multimodal_experiment as sw_k_fold_multimodal_experiment
 from confusion_networks.cn_combination import k_fold_multimodal_experiment as cn_k_fold_multimodal_experiment
-from word_graphs.wg_decoded_evaluation import k_fold_multimodal_experiment as cwg_k_fold_multimodal_experiment, k_fold_light_multimodal_experiment as light_cwg_k_fold_multimodal_experiment, k_fold_baseline_experiment as wg_k_fold_baseline_experiment
+from word_graphs.wg_decoded_evaluation import k_fold_multimodal_experiment as cwg_k_fold_multimodal_experiment, k_fold_light_multimodal_experiment as light_cwg_k_fold_multimodal_experiment
 from scenarios.folds_creation import create_folds, create_folds_according_ser
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -85,8 +85,6 @@ if __name__ == "__main__":
     for s in scenarios.keys():
         config.set_scenario(value=s)
         print(f"Scenario{config.scenario}")
-        # BASELINE
-        wg_k_fold_baseline_experiment()
         # 1) SMITH - WATERMAN
         sw_k_fold_multimodal_experiment(match=match, mismatch=mismatch, gap_penalty=gap_penalty)
         # 2) CONFUSION NETWORKS

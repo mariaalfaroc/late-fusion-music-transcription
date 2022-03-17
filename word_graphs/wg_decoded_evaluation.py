@@ -9,65 +9,6 @@ import config
 from evaluation import compute_metrics
 from kaldi_preprocessing import parse_kaldi_groundtruth
 
-# Utility function for performing a k-fold cross-validation baseline experiment on a single dataset
-def k_fold_baseline_experiment():
-    gc.collect()
-
-    # ---------- PRINT EXPERIMENT DETAILS
-
-    print("k-fold cross-validation experiment (greedy decoded kaldi word graphs)")
-    print(f"Data used {config.base_dir.stem}")
-
-    # ---------- K-FOLD EVALUATION
-
-    cwg_dir = config.output_dir / "CombinedWG_Decoded"
-
-    # Start the k-fold evaluation scheme
-    k = len(os.listdir(cwg_dir))
-    for i in range(k):
-        gc.collect()
-
-        print(f"Fold {i}")
-
-        # Load the current ground-truth data
-        # Same file for both models (ofc), so load one of them
-        kaldi_gt_path = config.output_dir / "omr" / f"Fold{i}" / "kaldi" / "grnTruth.dat"
-        gt = parse_kaldi_groundtruth(filepath=kaldi_gt_path)
-
-        # Set log filepath
-        log_path = cwg_dir / f"Fold{i}" / "baseline_logs.csv"
-
-        # Obtain predictions
-        omr_preds_path = cwg_dir / f"Fold{i}" / "OMR10_AMT0" / "Results" / "greedy.txt"
-        omr_preds = parse_kaldi_groundtruth(filepath=omr_preds_path)
-        amt_preds_path = cwg_dir / f"Fold{i}" / "OMR0_AMT10" / "Results" / "greedy.txt"
-        amt_preds = parse_kaldi_groundtruth(filepath=amt_preds_path)
-        assert gt.keys() == omr_preds.keys() == amt_preds.keys()
-        # Make sure they are in the same order
-        y_true_acc = []
-        omr_y_pred_acc = []
-        amt_y_pred_acc = []
-        for k in gt.keys():
-            y_true_acc.append(gt[k])
-            omr_y_pred_acc.append(omr_preds[k])
-            amt_y_pred_acc.append(amt_preds[k])
-        # Compute metrics
-        omr_symer, omr_seqer = compute_metrics(y_true_acc, omr_y_pred_acc)
-        amt_symer, amt_seqer = compute_metrics(y_true_acc, amt_y_pred_acc)
-        print(f"OMR: SymER (%): {omr_symer:.2f}, SeqER (%): {omr_seqer:.2f} - From {len(y_true_acc)} samples")
-        print(f"AMT: SymER (%): {amt_symer:.2f}, SeqER (%): {amt_seqer:.2f} - From {len(y_true_acc)} samples")
-        # Save fold logs
-        logs = {
-            "omr_symer": [omr_symer],
-            "omr_seqer": [omr_seqer],
-            "amt_symer": [amt_symer],
-            "amt_seqer": [amt_seqer],
-        }
-        logs = pd.DataFrame.from_dict(logs)
-        logs.to_csv(log_path, index=False)
-
-    return
-
 # Utility function for performing a k-fold cross-validation multimodal experiment on a single dataset
 def k_fold_multimodal_experiment():
     gc.collect()
