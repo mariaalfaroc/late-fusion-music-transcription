@@ -243,24 +243,6 @@ def combine_subnetworks(sn1, sn2):
         sn.append(prob_c)
     return sn
 
-# Utility function for smoothing all the probabilities of an "Insert" or "Delete" subnetwork
-def insertion_or_deletion_probability(sn):
-    # snx = [class-1 prob-1 class-2 prob-2] -> snx_dict = {"class-1": prob-1, "class-2": prob-2}
-    sn_dict = dict(zip(sn[0::2], sn[1::2]))
-    new_sn = []
-    # Add the "no symbol here" class
-    if "<eps>" not in sn_dict.keys():
-        sn_dict["<eps>"] = 0
-    # We halve the probability of all the classes of the subnetwork to insert or delete
-    new_sn_dict = dict(zip(sn_dict.keys(), [v / 2 for v in sn_dict.values()]))
-    # We increase a 50% the probability of deleting this subnetwork (the probabilities must sum up to one)
-    new_sn_dict["<eps>"] += 0.5
-    # We create the new subnetwork
-    for k, v in new_sn_dict.items():
-        new_sn.append(k)
-        new_sn.append(v)
-    return new_sn
-
 # Utility function for merging two aligned subnetworks into a new one
 def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
     # Ex.: cnx_type = {1: "Anchor", 2: "Anchor", 3: "Combine", 4: "Insert", 5: "Delete"}
@@ -275,6 +257,7 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
             cn[id][0], cn[id][1] = sn1, sn2
 
     # Second, insert the rest
+    eps_sn = ["<eps>", 1.0]
     for id, (i, j) in enumerate(path):
         # We only fill in the empty gaps
         if cn[id][0] == [] and cn[id][1] == []:
@@ -284,7 +267,7 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
                 if cn1_type[int(i)] == "Combine":
                     sn1, sn2 = combine_subnetworks(cn1[i], cn2[j]), ["-"]
                 elif cn1_type[int(i)] == "Insert" or cn1_type[int(i)] == "Delete":
-                    sn1, sn2 = insertion_or_deletion_probability(cn1[i]), insertion_or_deletion_probability(cn2[j])
+                    sn1, sn2 = combine_subnetworks(cn1[i], eps_sn), combine_subnetworks(eps_sn, cn2[j])
             # Subnetworks are of different type
             # Anchor-Combine, Anchor-Insert, Anchor-Delete, Combine-Insert, Combine-Delete, Insert-Delete
             else:
@@ -293,15 +276,15 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
                     # The "Anchor" subnetwork has been inserted already
                     if cn1_type[int(i)] == "Anchor":
                         sn1 = ["-"]
-                        sn2 = combine_subnetworks(cn1[i], cn2[j]) if cn2_type[int(j)] == "Combine" else insertion_or_deletion_probability(cn2[j])
+                        sn2 = combine_subnetworks(cn1[i], cn2[j]) if cn2_type[int(j)] == "Combine" else combine_subnetworks(eps_sn, cn2[j])
                     elif cn2_type[int(j)] == "Anchor":
-                        sn1 = combine_subnetworks(cn1[i], cn2[j]) if cn1_type[int(i)] == "Combine" else insertion_or_deletion_probability(cn1[i])
+                        sn1 = combine_subnetworks(cn1[i], cn2[j]) if cn1_type[int(i)] == "Combine" else combine_subnetworks(cn1[i], eps_sn)
                         sn2 = ["-"]
                 # Combine-Insert, Combine-Delete, Insert-Delete
                 else:
                     # NOTE: Assumption! -> When we find a Combine-Insert or a Combine-Delete pair, the Combine subnetwork has another possible combination
-                    sn1 = ["-"] if cn1_type[int(i)] == "Combine" else insertion_or_deletion_probability(cn1[i])
-                    sn2 = ["-"] if cn2_type[int(j)] == "Combine" else insertion_or_deletion_probability(cn2[j])
+                    sn1 = ["-"] if cn1_type[int(i)] == "Combine" else combine_subnetworks(cn1[i], eps_sn)
+                    sn2 = ["-"] if cn2_type[int(j)] == "Combine" else combine_subnetworks(eps_sn, cn2[j])
             cn[id][0], cn[id][1] = sn1, sn2
 
     # Third, filter the dummy values -> sn = ["-"] and reformat the structure
