@@ -12,5 +12,5 @@ The partitions used can be found in the 5-crossval.tgz file.
 tensorflow-gpu==2.3.1<br />
 pandas==1.3.0<br />
 numpy==1.18.5<br />
-opencv-python==4.5.3.56
+opencv-python==4.5.3.56<br />
 swalign==0.3.6
