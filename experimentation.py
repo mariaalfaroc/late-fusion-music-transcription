@@ -199,7 +199,7 @@ def k_fold_test_experiment():
         output_dir = config.output_dir / config.task / f"Fold{i}"
         pred_model_filepath = output_dir / "best_model.keras"
         w2i_filepath = output_dir / "w2i.json"
-        log_path = output_dir / "logs.csv"
+        log_path = output_dir / "test_logs.csv"
 
         # Get the current fold data
         test_images, test_labels = test_images_fnames[i], test_labels_fnames[i]
