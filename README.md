@@ -1,5 +1,8 @@
 # Late multimodal fusion for image and audio music transcription
 
+
+![Tensorflow](https://img.shields.io/badge/Tensorflow-%FFFFFF.svg?style=flat&logo=Tensorflow&logoColor=orange&color=white) [![License](https://img.shields.io/static/v1?label=License&message=MIT&color=blue)]() 
+
 Code for the paper:<br />
   >**María Alfaro-Contreras**, Jose J. Valero-Mas, Jose M. Iñesta, Jorge Calvo-Zaragoza<br />
   *[Late multimodal fusion for image and audio music transcription](https://doi.org/10.1016/j.eswa.2022.119491)*<br />
