@@ -4,7 +4,7 @@ import pandas as pd
 from tensorflow import keras
 
 from networks.test import evaluate_model
-from my_utils.preprocessing import train_data_generator
+from my_utils.data_processing import train_data_generator
 
 
 # Utility function for training, validating, and testing a model and saving the logs in a CSV file

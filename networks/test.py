@@ -5,7 +5,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from networks.metrics import compute_metrics
-from my_utils.preprocessing import preprocess_input, preprocess_label
+from my_utils.data_processing import preprocess_input, preprocess_label
 
 
 # CTC-greedy decoder:
