@@ -1,0 +1,8 @@
+fire
+music21
+midi2audio
+librosa
+swalign==0.3.6
+scikit-learn
+pandas
+opencv-python
