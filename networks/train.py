@@ -1,28 +1,23 @@
-# -*- coding: utf-8 -*-
-
-import os, gc, shutil
+from typing import List, Dict, Tuple
 
 import pandas as pd
-import numpy as np
 from tensorflow import keras
 
-import config
-from data_processing import (
-    get_folds_filenames,
-    get_datafolds_filenames,
-    get_fold_vocabularies,
-    save_w2i_dictionary,
-    load_dictionaries,
-    train_data_generator,
-)
-from networks.models import build_models
 from networks.test import evaluate_model
-from kaldi_preprocessing import *
+from my_utils.preprocessing import train_data_generator
 
 
 # Utility function for training, validating, and testing a model and saving the logs in a CSV file
 def train_and_test_model(
-    data, vocabularies, epochs, model, prediction_model, pred_model_filepath, log_path
+    task: str,
+    data: Tuple[List[str], List[str], List[str], List[str], List[str], List[str]],
+    vocabularies: Tuple[Dict[str, int], Dict[int, str]],
+    epochs: int,
+    batch_size: int,
+    model: keras.Model,
+    prediction_model: keras.Model,
+    pred_model_filepath: str,
+    log_path: str,
 ):
     train_images, train_labels, val_images, val_labels, test_images, test_labels = data
     w2i, i2w = vocabularies
@@ -33,21 +28,31 @@ def train_and_test_model(
     val_seqer_acc = []
 
     # Train and validate
-    best_symer = np.Inf
+    best_symer = float("inf")
     best_epoch = 0
     for epoch in range(epochs):
         print(f"--Epoch {epoch + 1}--")
         print("Training:")
         history = model.fit(
-            train_data_generator(train_images, train_labels, w2i),
+            train_data_generator(
+                task=task,
+                images_files=train_images,
+                labels_files=train_labels,
+                w2i=w2i,
+                batch_size=batch_size,
+            ),
             epochs=1,
             verbose=2,
-            steps_per_epoch=len(train_images) // config.batch_size,
+            steps_per_epoch=len(train_images) // batch_size,
         )
         loss_acc.extend(history.history["loss"])
         print("Validating:")
         val_symer, val_seqer = evaluate_model(
-            prediction_model, val_images, val_labels, i2w
+            task=task,
+            model=prediction_model,
+            images_files=val_images,
+            labels_files=val_labels,
+            i2w=i2w,
         )[0:2]
         val_symer_acc.append(val_symer)
         val_seqer_acc.append(val_seqer)
@@ -62,7 +67,11 @@ def train_and_test_model(
     print("Evaluating best validation model over test data")
     prediction_model = keras.models.load_model(pred_model_filepath)
     test_symer, test_seqer, test_data = evaluate_model(
-        prediction_model, test_images, test_labels, i2w
+        task=task,
+        model=prediction_model,
+        images_files=test_images,
+        labels_files=test_labels,
+        i2w=i2w,
     )
 
     # Save fold logs
