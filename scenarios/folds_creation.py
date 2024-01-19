@@ -105,7 +105,7 @@ def get_datafold_filenames(
 # Check if w2i dictionary exists for a given fold
 # If it does, retrieve it
 # If it does not, create it from the train partition of Scenario X
-def check_and_retrive_vocabulary(
+def check_and_retrieve_vocabulary(
     fold_id: int, retrieve_w2i_path: bool = False
 ) -> Tuple[Dict[str, int], Dict[int, str]]:
     w2i_path = os.path.join(VOCABS_DIR, f"w2i_fold{fold_id}.json")
@@ -319,7 +319,7 @@ def create_folds_with_train_and_test_subset(
             print(f"Test size: {len(test_images)}")
 
             # Check and retrieve vocabulary
-            _, i2w = check_and_retrive_vocabulary(fold_id=id)
+            _, i2w = check_and_retrieve_vocabulary(fold_id=id)
 
             # Get prediction model
             pred_model_filepath = f"results/scenarioX/fold{id}"
