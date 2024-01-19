@@ -68,7 +68,7 @@ We then evaluate all possible combinations of those three levels with OMR and AM
 
 To replicate our experiments, you will first need to meet certain requirements specified in the [`Dockerfile`](Dockerfile). Alternatively, you can set up a virtual environment if preferred. Once you have prepared your environment (either a Docker container or a virtual environment) and followed the steps in the [dataset](#dataset) section, you are ready to begin. Follow this recipe to replicate our experiments:
 
-> **Important note: To execute the following code, both Java and FluidSynth must be installed.**
+> **Important note: To execute the following code, both Java, FluidSynth and Kaldi must be installed.**
 
 ```bash
 $ cd dataset
