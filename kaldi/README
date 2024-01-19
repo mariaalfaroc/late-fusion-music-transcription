@@ -1,0 +1,32 @@
+- Late multimodal fusion for image and audio music transcription - 
+María Alfaro-Contreras, Jose J Valero-Mas, José M Iñesta, Jorge Calvo-Zaragoza
+
+
+# Pre-requisits:
+1) Kaldi
+2) Lightweight lattice combination: https://github.com/jfainberg/
+3) Python
+
+
+# Usage: 
+1) The CRNN model outputs a file comprising all posteriorgrams from the test data partition => posteriograms.dat
+
+2) The SrcToKaldi.py script is then used to divided posteriograms.dat in a file-wise fashion as well as removing '-inf' log probalities(*):
+$python SrcToKaldi.py --src /path-to-posteriorgram/posteriograms.dat --dst ./{AMT,OMR}/{AMT,OMR}_ConfMat/ --greedy /path-to-results/
+
+3) Kaldi is used for obtaining the lattice-based representations of the files:
+$ sh run.sh
+
+4) Resulting lattice representations (the ones at ./{OMR,AMT}/{OMR,AMT}_lattices/) must be copied (no script provided) to the results folder for each modality in the following path:
+/path-to-results/{OMR,AMT}/WG
+
+5) The CombineModalities.py script is used for merging the lattice-based representations as well as for obtaining the sausage-based ones. Note that source OMR and AMT paths as well as the destination one must be configured inside the script (in the main method). Execution is performed as:
+$ python CombineModalities.py
+
+
+
+
+
+
+
+(*) Note that this is done independently for the AMT and OMR modalities
