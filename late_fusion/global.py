@@ -48,7 +48,7 @@ from my_utils.kaldi_preprocessing import parse_kaldi_groundtruth
 # <s> -> Indicates the start of a sequence.
 # </s> 1170 -> Indicates the end of a sequence.
 
-# -------------------- FIRST PART
+############################################################################ FIRST PART:
 
 
 # Utility function for computing the cost (Symbol Error Rate or Intersection) between two subnetworks
@@ -103,11 +103,11 @@ def dtw(cn1, cn2):
     return cost_matrix, path
 
 
-# -------------------- SECOND PART
+############################################################################ SECOND PART:
 
 
 # Utility function for performing tie breaking rule over subnetworks classified as "Insert/Delete"
-def insertion_or_deletion_labeling(sn, modality):
+def insertion_or_deletion_labeling(sn, modality: int) -> str:
     sn_type = ""
     insert_threshold = 0.25  # Most probable class of the second modality exceeds this threshold -> Insert
     delete_threshold = 0.75  # Most probable class of the first modality does not reach this threshold -> Delete
@@ -181,12 +181,12 @@ def reverse_dict(cn_type):
 
 
 # Utility function for merging the labeling in both directions of a confusion network
-def subnetworks_labeling_alignment(cn, cn_type_1, cn_type_2):
+def subnetworks_labeling_alignment(cn_type_1, cn_type_2):
     # Ex.: cn_type_x =  {"Anchor": [1, 2], "Combine": [3], "Insert": [4], "Delete": [5]}
     types = {"Anchor": 100, "Combine": 50, "Insert": 0, "Delete": 0}
     # FIRST STEP
     # We take only as "Anchor" subnetworks those where both searches coincide
-    cn_type = dict()
+    cn_type = {}
     for v in types.keys():
         cn_type[v] = set(cn_type_1[v]).intersection(set(cn_type_2[v]))
     # SECOND STEP
@@ -217,12 +217,12 @@ def subnetworks_based_alignment(cn1, cn2, cost_matrix, path):
     cn1_type_1, cn2_type_1 = subnetworks_labeling(cn1, cn2, cost_matrix, path)
     cn1_type_2, cn2_type_2 = subnetworks_labeling(cn1, cn2, cost_matrix, path[::-1])
     # Unify the searches
-    cn1_type = subnetworks_labeling_alignment(cn1, cn1_type_1, cn1_type_2)
-    cn2_type = subnetworks_labeling_alignment(cn2, cn2_type_1, cn2_type_2)
+    cn1_type = subnetworks_labeling_alignment(cn1_type_1, cn1_type_2)
+    cn2_type = subnetworks_labeling_alignment(cn2_type_1, cn2_type_2)
     return cn1_type, cn2_type
 
 
-# -------------------- THIRD PART
+############################################################################ THIRD PART:
 
 
 def set_weight_factor(value=0.5):
@@ -230,7 +230,8 @@ def set_weight_factor(value=0.5):
     weight_factor = round(value, 1)
 
 
-# Utility function for computing the final probability of a class given their probabilities in other subnetworks (used when those subnetworks are combined)
+# Utility function for computing the final probability of a class given their probabilities
+# in other subnetworks (used when those subnetworks are combined)
 def smooth_probability(prob_c_sn1, prob_c_sn2, n1, n2):
     granularity_factor = 10e-4
     prob_c_sn1 = (prob_c_sn1 + granularity_factor) / (1 + n1 * granularity_factor)
@@ -311,7 +312,9 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
                         sn2 = ["-"]
                 # Combine-Insert, Combine-Delete, Insert-Delete
                 else:
-                    # NOTE: Assumption! -> When we find a Combine-Insert or a Combine-Delete pair, the Combine subnetwork has another possible combination
+                    # NOTE: Assumption!
+                    # When we find a Combine-Insert or a Combine-Delete pair,
+                    # the Combine subnetwork has another possible combination
                     sn1 = (
                         ["-"]
                         if cn1_type[int(i)] == "Combine"
@@ -348,7 +351,7 @@ def combine_confusion_networks(cn1, cn2):
     return cn
 
 
-# -------------------- UTILS
+############################################################################ UTILS:
 
 
 # Utility function for parsing a confusion network file
@@ -406,25 +409,19 @@ def confnet_greedy_decoder(cn):
     return cn_decoded
 
 
-# -------------------- EXPERIMENT WORKFLOW
+############################################################################ K-FOLD EXPERIMENT:
 
 
 # Utility function for performing a k-fold cross-validation multimodal experiment on a single dataset
-def k_fold_multimodal_experiment():
+def k_fold_multimodal_experiment(*, scenario_name: str):
     gc.collect()
 
     # ---------- PRINT EXPERIMENT DETAILS
 
-    print(
-        "k-fold multimodal image and audio music transcription using confusion networks experiment"
-    )
-    print(f"Data used {config.base_dir.stem}")
+    print(f"5-fold multimodal cross-validation experiment for scenario {scenario_name}")
+    print("\tMultimodal policy: GLOBAL (Confusion Network Combination)")
 
     # ---------- K-FOLD EVALUATION
-
-    assert os.listdir(config.output_dir / "omr") == os.listdir(
-        config.output_dir / "amt"
-    )
 
     # Start the k-fold evaluation scheme
     k = len(os.listdir(config.output_dir / "omr"))
@@ -474,7 +471,7 @@ def k_fold_multimodal_experiment():
             # Set weight factor
             set_weight_factor(wf)
             print(
-                f"Weight factor for OMR: {weight_factor}, Weight factor for AMT: {round(1 - weight_factor, 1)}"
+                f"Weight factor for OMR: {weight_factor}\nWeight factor for AMT: {round(1 - weight_factor, 1)}"
             )
             # Multimodal transcription evaluation
             labels_files = []
@@ -512,8 +509,6 @@ def k_fold_multimodal_experiment():
         }
         logs = pd.DataFrame.from_dict(logs)
         logs.to_csv(log_path, index=False)
-
-    return
 
 
 # if __name__ == "__main__":
