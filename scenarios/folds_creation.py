@@ -1,18 +1,30 @@
-# -*- coding: utf-8 -*-
+import os
+import gc
+import json
+import shutil
+import random
+from typing import List, Dict, Tuple
 
-import os, gc, random, shutil, pathlib
-
-import numpy as np
 from tensorflow import keras
 
-import config
-from data_processing import get_folds_filenames, get_datafolds_filenames, load_dictionaries, preprocess_image, preprocess_label
-from evaluation import ctc_greedy_decoder, compute_metrics
+from networks.test import evaluate_model
 
-# We consider three levels of model performance: High (SER ~ 25-28 %), Medium (SER ~ 15-18 %), Low (SER ~ 5-8 %)
+
+INPUT_EXTENSION = {"omr": "_distorted.jpg", "amt": ".wav"}
+LABEL_EXTENSION = ".semantic"
+VOCABS_DIR = "scenarios/vocabs/"
+os.makedirs(VOCABS_DIR, exist_ok=True)
+
+
+######################################################################################################################################################################################
+
+# We consider three levels of model performance:
+# 1) High (SER ~ 25-28 %)
+# 2) Medium (SER ~ 15-18 %)
+# 3) Low (SER ~ 5-8 %)
 # We then evaluate all possible combinations of those three levels with OMR and AMT models
 
-# There are nine scenarios:
+# Therefore, there are nine scenarios:
 # 1) OMR High - AMT High
 # 2) OMR High - AMT Medium
 # 3) OMR High - AMT Low
@@ -24,173 +36,116 @@ from evaluation import ctc_greedy_decoder, compute_metrics
 # 9) OMR Low - AMT Low
 
 #                   Scenario 1                              Scenario 2                              Scenario 3
-#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT              
-# Train	    2.5% Part. Orig.    Part. Orig.         2.2% Part. Orig.      Part. Orig.       2.0% Part. Orig.    Part. Orig.
+#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT
+# Train	    2.5% Part. Orig.    Part. Orig.         2.2% Part. Orig.    Part. Orig.         2.0% Part. Orig.    Part. Orig.
 # Val	    Part. Orig.	        Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.
-# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2 
+# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2
 
 #                   Scenario 4                              Scenario 5                              Scenario 6
-#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT              
-# Train	    4.0% Part. Orig.    Part. Orig.         3.7% Part. Orig.      Part. Orig.       3.0% Part. Orig.    Part. Orig.
+#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT
+# Train	    4.0% Part. Orig.    Part. Orig.         3.7% Part. Orig.    Part. Orig.         3.0% Part. Orig.    Part. Orig.
 # Val	    Part. Orig.	        Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.
-# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2 
+# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2
 
 #                   Scenario 7                              Scenario 8                              Scenario 9
-#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT              
+#               OMR	                AMT                 OMR	                AMT                 OMR	                AMT
 # Train	    10.5% Part. Orig.   Part. Orig.         9.0% Part. Orig.    Part. Orig.         6.3% Part. Orig.    Part. Orig.
 # Val	    Part. Orig.	        Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.         Part. Orig.
-# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2 
+# Test	    Part. Orig.	        Part. Orig.         New set 1	        New set 1           New set 2	        New set 2
 
 #                   Scenario X
-#               OMR	           AMT            
+#               OMR	           AMT
 # Train	    Part. Orig.    Part. Orig.
 # Val	    Part. Orig.	   Part. Orig.
 # Test	    Part. Orig.	   Part. Orig.
 
-# New set 1 == Created according to AMT model performace -> Samples of the original test partition whose Symbol Error Rate is lower than or equal to 30% 
-# New set 2 == Created according to AMT model performace -> Samples of the original test partition whose Symbol Error Rate is lower than or equal to 10% 
+# New set 1 == Created according to AMT model performace -> Samples of the original test partition whose Symbol Error Rate is lower than or equal to 30%
+# New set 2 == Created according to AMT model performace -> Samples of the original test partition whose Symbol Error Rate is lower than or equal to 10%
 
-# -------------------- SCENARIOS 1, 4, AND 7
+######################################################################################################################################################################################
 
-# Utility function for creating 5-folds with train, validation, and test partitions using a subset of the train partition
-def create_folds(p_size: float, scenario: str):
-    # Obtain folds for ScenarioX
-    config.set_scenario(value="X")
-    print(f"Scenario{scenario} uses train ({p_size} %, only for OMR), val, and test partitions of Scenario{config.scenario}") 
-    train_folds_files = get_folds_filenames("train")
-    val_folds_files = get_folds_filenames("val")
-    test_folds_files = get_folds_filenames("test")
-    # Create Scenario{scenario} folder
-    os.makedirs(str(config.folds_dir).replace("ScenarioX", f"Scenario{scenario}"), exist_ok=True)
-    # Copy val and test folds
-    for val, test in zip(val_folds_files, test_folds_files):
-        shutil.copyfile(val, val.replace("ScenarioX", f"Scenario{scenario}"))
-        shutil.copyfile(test, test.replace("ScenarioX", f"Scenario{scenario}"))
-    # Create new train folds
-    for i in train_folds_files:
-        data = open(i).readlines()
-        random.shuffle(data)
-        new_size = int(len(data) * p_size / 100)
-        data = data[:new_size]
-        data = data[:-1] + [data[-1].split("\n")[0]]
-        with open(i.replace("ScenarioX", f"Scenario{scenario}"), "w") as txt:
-            for s in data:
-                txt.write(s)
-    return
 
-# -------------------- SCENARIOS 2, 3, 5, 6, 8, AND 9
+# Get all the folds filenames for each data partition
+# folds = {"train": [".../train_gt_fold0.dat", ".../train_gt_fold1.dat", ...], "val": [...], "test": [...]}
+def get_folds_filenames(scenario_name: str) -> Dict[str, List[str]]:
+    scenario_dir = f"scenarios/Scenario{scenario_name}"
 
-# Utility function for writing 5-folds with train, validation, and test partitions based on both model performance and subset of training samples
-def write_folds(samples: list, p_size: float, scenario: str):
-    # Obtain folds for ScenarioX
-    config.set_scenario(value="X")
-    train_folds_files = get_folds_filenames("train")
-    val_folds_files = get_folds_filenames("val")
-    # Create Scenario{scenario} folder
-    os.makedirs(str(config.folds_dir).replace("ScenarioX", f"Scenario{scenario}"), exist_ok=True)
-    # Create new train folds
-    for i in train_folds_files:
-        data = open(i).readlines()
-        random.shuffle(data)
-        new_size = int(len(data) * p_size / 100)
-        data = data[:new_size]
-        data = data[:-1] + [data[-1].split("\n")[0]]
-        with open(i.replace("ScenarioX", f"Scenario{scenario}"), "w") as txt:
-            for s in data:
-                txt.write(s)
-    # Copy val folds
-    for val in val_folds_files:
-        shutil.copyfile(val, val.replace("ScenarioX", f"Scenario{scenario}"))
-    # Create new test folds
-    config.set_scenario(value=scenario)
-    for id, test in enumerate(samples):
-        test_fold = os.path.join(config.folds_dir, f"test_gt_fold{id}.dat")
-        # Write folds files
-        with open(test_fold, "w") as txt:
-            test = [s + "\n" for s in test[:-1]] + [test[-1]]
-            txt.writelines(test)
-    return
+    folds = {"train": [], "val": [], "test": []}
+    for fname in os.listdir(scenario_dir):
+        if fname.startswith("train"):
+            folds["train"].append(os.path.join(scenario_dir, fname))
+        elif fname.startswith("val"):
+            folds["val"].append(os.path.join(scenario_dir, fname))
+        elif fname.startswith("test"):
+            folds["test"].append(os.path.join(scenario_dir, fname))
 
-# Utility function for evaluating a model over a dataset and adding the samples that are lower or equal than a threshold to a list
-def evaluate_model(model, images_files, labels_files, i2w, symer_threshold=30):
-    new_set = []
-    # Iterate over images
-    for i in range(len(images_files)):
-        images, images_len = list(zip(*[preprocess_image(images_files[i])]))
-        images = np.array(images, dtype="float32")
-        # Obtain predictions
-        y_pred = model(images, training=False)
-        # CTC greedy decoder (merge repeated, remove blanks, and i2w conversion)
-        y_pred = ctc_greedy_decoder(y_pred, images_len, i2w)
-        # Obtain true labels
-        y_true = [preprocess_label(labels_files[i], training=False, w2i=None)]
-        # Compute Symbol Error Rate
-        symer = compute_metrics(y_true, y_pred)[0]
-        # If the Symbol Error Rate is lower than or equal to the threshold, the sample gets added to the new subset
-        if symer <= symer_threshold:
-            new_set.append(pathlib.Path(labels_files[i]).stem)
-    print(f"For this fold, only {len(new_set)} samples have a Symbol Error Rate lower than or equal to {symer_threshold}")
-    return new_set
+    assert (
+        len(folds["train"]) == len(folds["val"]) == len(folds["test"])
+    ), "Folds are not balanced!"
 
-# Utility function for obtaining model predictions and creating a new subset based on the corresponding error prediction
-def create_folds_according_ser(p_size: float, scenario: str, symer_threshold=30):
-    keras.backend.clear_session()
-    gc.collect()
+    return {k: sorted(v) for k, v in folds.items()}
 
-    config.set_scenario(value="X")
-    config.set_task(value="amt")
-    config.set_data_globals()
-    config.set_arch_globals(batch=4)
 
-    # ---------- PRINT EXPERIMENT DETAILS
+# Get all images and labels filenames
+# of a corresponding fold filename
+def get_datafold_filenames(
+    task: str, fold_filename: list
+) -> Tuple[List[str], List[str]]:
+    images_filenames = []
+    labels_filenames = []
+    with open(fold_filename) as f:
+        lines = f.read().splitlines()
+    for line in lines:
+        common_path = f"dataset/Corpus/{line}/{line}"
+        images_filenames.append(common_path + INPUT_EXTENSION[task])
+        labels_filenames.append(common_path + LABEL_EXTENSION)
+    return images_filenames, labels_filenames
 
-    print(f"Creating folds according on AMT model performance on Scenario{config.scenario}: Sym-Er Threshold = {symer_threshold}")
-    print(f"Percentage of the new train partition (for OMR) = {p_size}")
-    print(f"Data used {config.base_dir.stem}")
 
-    # ---------- DATA COLLECTION
+def check_and_retrive_vocabulary(fold_id: int) -> Tuple[Dict[str, int], Dict[int, str]]:
+    w2i_path = os.path.join(VOCABS_DIR, f"w2i_fold{fold_id}.json")
+    if os.path.exists(w2i_path):
+        w2i, i2w = load_dictionaries(filepath=w2i_path)
+    else:
+        # Use ScenarioD train files
+        folds = get_folds_filenames("D")
+        _, labels_filenames = get_datafold_filenames(
+            task="omr", fold_filename=folds["train"][fold_id]
+        )
+        w2i, i2w = get_fold_vocabularies(labels_filenames)
+        save_w2i_dictionary(w2i, filepath=w2i_path)
+    return w2i, i2w
 
-    test_folds_files = get_folds_filenames("test")
-    test_images_fnames, test_labels_fnames = get_datafolds_filenames(test_folds_files) 
 
-    # ---------- K-FOLD EVALUATION
-    new_set = []
+# Get dictionaries for w2i and i2w conversion
+# corresponding to a single training fold
+def get_fold_vocabularies(
+    train_labels_fnames: List[str],
+) -> Tuple[Dict[str, int], Dict[int, str]]:
+    # Get all tokens related to a SINGLE train data fold
+    tokens = []
+    for fname in train_labels_fnames:
+        with open(fname) as f:
+            tokens.extend(f.read().split())
+    # Eliminate duplicates and sort them alphabetically
+    tokens = sorted(set(tokens))
+    # Create vocabularies
+    w2i = dict(zip(tokens, range(len(tokens))))
+    i2w = dict(zip(range(len(tokens)), tokens))
+    return w2i, i2w
 
-    # Start the k-fold evaluation scheme
-    k = len(test_images_fnames)
-    for i in range(k):
-        # With 'clear_session()' called at the beginning,
-        # Keras starts with a blank state at each iteration
-        # and memory consumption is constant over time.
-        keras.backend.clear_session()
-        gc.collect()
 
-        print(f"Fold {i}")
+# Utility function for saving w2i dictionary in a JSON file
+def save_w2i_dictionary(w2i: Dict[str, int], filepath: str):
+    # Save w2i dictionary to JSON filepath to later retrieve it
+    # No need to save both of them as they are related
+    with open(filepath, "w") as json_file:
+        json.dump(w2i, json_file)
 
-        # Set filepaths outputs
-        output_dir = config.output_dir / config.task / f"Fold{i}"
-        pred_model_filepath = output_dir / "best_model.keras"
-        w2i_filepath = output_dir / "w2i.json"
 
-        # Get the current fold data
-        test_images, test_labels = test_images_fnames[i], test_labels_fnames[i]
-        assert len(test_images) == len(test_labels)
-        print(f"Test: {len(test_images)}")
-
-        # Get and save vocabularies
-        i2w = load_dictionaries(w2i_filepath)[1]
-
-        # Get prediction model
-        prediction_model = keras.models.load_model(pred_model_filepath)
-
-        # Evaluate model and add to the new set the samples whose prediction error is lower than or equal to threshold
-        new_set.append(evaluate_model(prediction_model, test_images, test_labels, i2w, symer_threshold=symer_threshold))
-
-        # Clear memory
-        del test_images, test_labels
-        del prediction_model
-
-    # Create 5-folds using new set samples
-    write_folds(samples=new_set, p_size=p_size, scenario=scenario)
-
-    return
+# Retrieve w2i and i2w dictionaries from w2i JSON file
+def load_dictionaries(filepath: str) -> Tuple[Dict[str, int], Dict[int, str]]:
+    with open(filepath, "r") as json_file:
+        w2i = json.load(json_file)
+    i2w = {int(v): k for k, v in w2i.items()}
+    return w2i, i2w
