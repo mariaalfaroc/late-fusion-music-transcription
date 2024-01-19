@@ -149,3 +149,54 @@ def load_dictionaries(filepath: str) -> Tuple[Dict[str, int], Dict[int, str]]:
         w2i = json.load(json_file)
     i2w = {int(v): k for k, v in w2i.items()}
     return w2i, i2w
+
+
+##################################### SCENARIOS 1, 4 AND 7:
+
+# OMR data:
+# For each train partition of Scenario X,
+# we randomly select either 2.5% or 4% or a 10.5%, as corresponds
+# Those are the new train partitions
+# Validation and test partitions are those of Scenario X
+
+
+# Utility function for checking if a scenario already exists
+def check_scenario_exists(scenario: str):
+    exist = False
+    if os.path.isdir(f"scenarios/Scenario{scenario}"):
+        exist = True
+        for s in ["train", "val", "test"]:
+            for id in range(5):
+                if not os.path.isfile(
+                    f"scenarios/Scenario{scenario}/{s}_gt_fold{id}.dat"
+                ):
+                    exist = False
+                    break
+    return exist
+
+
+# Utility function for creating 5-folds with train,
+# validation, and test partitions for Scenarios 1, 4 and 7
+# Validation and test partitions are those of Sceneario X
+# Train is a random subset of the original train partition of Scenario X
+def create_a_and_b_folds(p_size: float, scenario: str):
+    # Check if the scenario already exists
+    if not check_scenario_exists(scenario):
+        # Obtain folds for ScenarioX
+        folds = get_folds_filenames("X")
+        # Create Scenario{scenario} folder
+        os.makedirs(f"scenarios/Scenario{scenario}", exist_ok=True)
+        # Copy val and test folds
+        for f in folds["val"] + folds["test"]:
+            shutil.copyfile(f, f.replace("ScenarioX", f"Scenario{scenario}"))
+        # Create new train folds
+        for f in folds["train"]:
+            with open(f, "r") as dat:
+                samples = dat.read().splitlines()
+            new_size = int(len(samples) * p_size / 100)
+            new_samples = random.sample(samples, k=new_size)
+            with open(f.replace("ScenarioX", f"Scenario{scenario}"), "w") as new_dat:
+                new_dat.write("\n".join(new_samples))
+    else:
+        print(f"Scenario {scenario} already exists! Using existing folds.")
+        pass
