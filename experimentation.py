@@ -125,18 +125,18 @@ def k_fold_experiment(
 
 # Utility function for performing a k-fold test partition experiment
 # using previously trained models
-def k_fold_test_experiment(*, task: str, scenario: str):
+def k_fold_test_experiment(*, task: str, scenario_name: str):
     keras.backend.clear_session()
     gc.collect()
 
     # ---------- PRINT EXPERIMENT DETAILS
 
-    print(f"5-fold cross-validation experiment for scenario {scenario}")
+    print(f"5-fold cross-validation experiment for scenario {scenario_name}")
     print(f"\tTask: {task}")
 
     # ---------- DATA COLLECTION
 
-    folds = get_folds_filenames(scenario)
+    folds = get_folds_filenames(scenario_name)
 
     # ---------- K-FOLD EVALUATION
 
@@ -163,7 +163,7 @@ def k_fold_test_experiment(*, task: str, scenario: str):
         # Test the best validation model
         print("Evaluating best validation model over test data")
         pred_model_filepath = (
-            f"results/scenario{scenario}" if task == "omr" else "results/scenarioX"
+            f"results/scenario{scenario_name}" if task == "omr" else "results/scenarioX"
         )
         pred_model_filepath = os.path.join(
             pred_model_filepath, f"fold{id}", f"best_{task}_model.keras"
@@ -179,7 +179,7 @@ def k_fold_test_experiment(*, task: str, scenario: str):
         )
 
         # Save fold logs
-        output_dir = f"results/scenario{scenario}/fold{id}"
+        output_dir = f"results/scenario{scenario_name}/fold{id}"
         os.makedirs(output_dir, exist_ok=True)
         log_path = os.path.join(output_dir, f"{task}_logs.csv")
         logs = {"test_symer": [test_symer], "test_seqer": [test_seqer]}

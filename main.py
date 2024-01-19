@@ -1,95 +1,88 @@
-# -*- coding: utf-8 -*-
+import os
+import random
 
-import os, shutil
-
+import numpy as np
 import tensorflow as tf
 
-import config
+from scenarios.folds_creation import (
+    create_folds_with_train_subset,
+    create_folds_with_train_and_test_subset,
+)
 from experimentation import k_fold_experiment, k_fold_test_experiment
 
-from word_graphs.smith_waterman import k_fold_multimodal_experiment as sw_k_fold_multimodal_experiment
-from confusion_networks.cn_combination import k_fold_multimodal_experiment as cn_k_fold_multimodal_experiment
-from word_graphs.wg_decoded_evaluation import k_fold_multimodal_experiment as cwg_k_fold_multimodal_experiment, k_fold_light_multimodal_experiment as light_cwg_k_fold_multimodal_experiment
-from scenarios.folds_creation import create_folds, create_folds_according_ser
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 tf.config.list_physical_devices("GPU")
 
+# Seed
+random.seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
+
 if __name__ == "__main__":
-    epochs = 150
-    scenarios = {"1": 2.5, "2": 2.2, "3": 2.0, "4": 4.0, "5": 3.7, "6": 3.0, "7": 10.5, "8": 9.0, "9": 6.3}
+    EPOCHS = 150
+    BATCH_SIZE = {"omr": 16, "amt": 4}
+    SCENARIOS_TRAIN_PSIZE_OMR = {
+        "1": 2.5,
+        "2": 2.2,
+        "3": 2.0,
+        "4": 4.0,
+        "5": 3.7,
+        "6": 3.0,
+        "7": 10.5,
+        "8": 9.0,
+        "9": 6.3,
+    }
 
+    ##################################### EVALUATION ON SCENARIO X (ORIGINAL PARTITIONS) AND SCENARIOS FOLD CREATION:
+
+    # 1) SCENARIO X
     # Evaluate AMT on Scenario X to be able to create test partitions based on model performance
-    config.set_scenario(value="X")
-    # AMT
-    config.set_task(value="amt")
-    config.set_data_globals()
-    config.set_arch_globals(batch=4)
-    print(f"Task == {config.task}")
-    print(f"Scenario == {config.scenario}")
-    k_fold_experiment(epochs)
-    # Scenarios 1, 4, and 7 are the same as X for AMT
-    shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario1" / "amt"))
-    shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario4" / "amt"))
-    shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario7" / "amt"))
-    # The rest of scenarios for AMT use the same model and the same vocabulary as in ScenarioX
-    # Right now, we only need to copy those files to Scenarios 2 and 3
-    for s in ["2", "3"]:
-        os.makedirs(config.base_dir / "Experiments" / f"Scenario{s}", exist_ok=True)
-        os.makedirs(config.base_dir / "Experiments" / f"Scenario{s}" / "amt", exist_ok=True)
-        for f in os.listdir(config.output_dir / "amt"):
-            os.makedirs(config.base_dir / "Experiments" / f"Scenario{s}" / "amt" / f, exist_ok=True)
-            shutil.copyfile(str(config.output_dir / "amt" / f / "best_model.keras"), config.base_dir / "Experiments" / f"Scenario{s}" / "amt" / f / "best_model.keras")
-            shutil.copyfile(str(config.output_dir / "amt" / f / "w2i.json"), config.base_dir / "Experiments" / f"Scenario{s}" / "amt" / f / "w2i.json")
+    # There is no need to evaluate OMR on Scenario X as it will never be used for late multimodal fusion
+    for task in ["omr", "amt"]:
+        if task == "omr":
+            continue
+        k_fold_experiment(
+            task=task,
+            scenario_name="X",
+            epochs=EPOCHS,
+            batch_size=BATCH_SIZE[task],
+        )
 
+    # 2) SCENARIOS FOLD CREATION
     # Create folds for the rest of the scenarios to evaluate OMR
-    for s, p_size in scenarios.items():
+    for s, p_size in SCENARIOS_TRAIN_PSIZE_OMR.items():
         if s in ["1", "4", "7"]:
-            create_folds(p_size=p_size, scenario=s)
+            create_folds_with_train_subset(p_size=p_size, scenario=s)
         elif s in ["2", "5", "8"]:
-            create_folds_according_ser(p_size=p_size, scenario=s, symer_threshold=30)
+            create_folds_with_train_and_test_subset(
+                train_p_size=p_size, scenario=s, symer_threshold=30
+            )
         else:
-            create_folds_according_ser(p_size=p_size, scenario=s, symer_threshold=10)
+            create_folds_with_train_and_test_subset(
+                train_p_size=p_size, scenario=s, symer_threshold=10
+            )
 
-    # STAND-ALONE EVALUATION
-    for s in scenarios.keys():
-        config.set_scenario(value=s)
-        if s in ["2", "3"]:
-            config.set_task(value="amt")
-            config.set_data_globals()
-            config.set_arch_globals(batch=4)
-            print(f"Task == {config.task}")
-            print(f"Scenario == {config.scenario}")
-            k_fold_test_experiment()
-            if s == "2":
-                shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario5" / "amt"))
-                shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario8" / "amt"))
-            else:
-                shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario6" / "amt"))
-                shutil.copytree(src=str(config.output_dir / "amt"), dst=str(config.base_dir / "Experiments" / "Scenario9" / "amt"))
-        # OMR
-        config.set_task(value="omr")
-        config.set_data_globals()
-        config.set_arch_globals(batch=16)
-        print(f"Task == {config.task}")
-        print(f"Scenario == {config.scenario}")
-        k_fold_experiment(epochs)
+    ##################################### STAND-ALONE EVALUATION:
+    for s in SCENARIOS_TRAIN_PSIZE_OMR.keys():
+        # OMR must be trained and tested
+        k_fold_experiment(
+            task="omr",
+            scenario_name=s,
+            epochs=EPOCHS,
+            batch_size=BATCH_SIZE["omr"],
+        )
+        # AMT must be tested only
+        if s in ["1", "4", "7"]:
+            continue
+        else:
+            k_fold_test_experiment(task="amt", scenario_name=s)
+
+    ##################################### KALDI PREPROCESSING::
 
     # TODO: JJ code should be placed here
 
-    # MULTIMODAL EVALUATION
-    match = [2, 10, 20, 5]
-    mismatch = [-1, 5, 10, 2,]
-    gap_penalty = [-1, -2, -4, -1]
-    for s in scenarios.keys():
-        config.set_scenario(value=s)
-        print(f"Scenario{config.scenario}")
-        # 1) SMITH - WATERMAN
-        sw_k_fold_multimodal_experiment(match=match, mismatch=mismatch, gap_penalty=gap_penalty)
-        # 2) CONFUSION NETWORKS
-        cn_k_fold_multimodal_experiment()
-        # 3) COMBINED WORD GRAPHS
-        cwg_k_fold_multimodal_experiment()
-        # 4) LIGHT COMBINED WORD GRAPHS
-        light_cwg_k_fold_multimodal_experiment()
+    ##################################### MULTIMODAL EVALUATION:
+
+    # TODO: Place multimodal calls here
