@@ -233,3 +233,35 @@ def write_folds(test_samples: Dict[int, List[str]], train_p_size: float, scenari
     for id, samples in test_samples.items():
         with open(f"scenarios/Scenario{scenario}/test_gt_fold{id}.dat", "w") as dat:
             dat.write("\n".join(samples))
+
+
+# Utility function for evaluating a model over a dataset and
+# adding the samples that are lower or equal than a threshold to a list
+def filter_samples(
+    *,
+    task: str,
+    model: keras.Model,
+    images_files: List[str],
+    labels_files: List[str],
+    i2w: Dict[int, str],
+    symer_threshold: int = 30,
+):
+    new_set = []
+    # Iterate over images
+    for img, label in zip(images_files, labels_files):
+        symer, _, _ = evaluate_model(
+            task=task,
+            model=model,
+            images_files=[img],
+            labels_files=[label],
+            i2w=i2w,
+            print_metrics=False,
+        )
+        # If the Symbol Error Rate is lower than or equal to the threshold,
+        # the sample gets added to the new subset
+        if symer <= symer_threshold:
+            new_set.append(os.path.splitext(os.path.basename(label))[0])
+    print(
+        f"For this fold, only {len(new_set)} samples have a Symbol Error Rate lower than or equal to {symer_threshold}"
+    )
+    return new_set
