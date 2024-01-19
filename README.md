@@ -28,10 +28,10 @@
 
 [^1]: It is important to clarify that the model we are referring to is actually an Audio-to-Score (A2S) model. At the time of conducting this research, we used the term AMT because the distinction between AMT and A2S did not exist in the literature. However, nowadays, there is a clear distinction between the two. AMT typically focuses on note-level transcription, encoding the acoustic piece in terms of onset, offset, pitch values, and the musical instrument of the estimated notes. In contrast, A2S aims to achieve a score-level codification.
 
-[^2] Xu, H., Povey, D., Mangu, L., & Zhu, J. (2011). Minimum Bayes Risk Decoding and System Combination Based on a Recursion for Edit Distance. Comput. Speech Lang., 25, 802–828.
-[^3] Fainberg, J., Klejch, O., Renals, S., & Bell, P. (2019). Lattice-Based Lightly-Supervised Acoustic Model Training. In Interspeech 20th Annual Conference of the International Speech Communication Association (pp. 1596–1600). Graz, Austria.
-[^4] Granell, E., & Mart ́ınez-Hinarejos, C.-D. (2015). Combining handwriting and speech recognition for transcribing historical handwritten documents. In 13th International Conference on Document Analysis and Recognition (ICDAR) (pp. 126–130).
-[^5] de la Fuente, C., Valero-Mas, J. J., Castellanos, F. J., & Calvo-Zaragoza, J. (2021). Multimodal image and audio music transcription. Int. J. Multimed. Inf. Retr., (pp. 1–8).
+[^2]: Xu, H., Povey, D., Mangu, L., & Zhu, J. (2011). Minimum Bayes Risk Decoding and System Combination Based on a Recursion for Edit Distance. Comput. Speech Lang., 25, 802–828.
+[^3]: Fainberg, J., Klejch, O., Renals, S., & Bell, P. (2019). Lattice-Based Lightly-Supervised Acoustic Model Training. In Interspeech 20th Annual Conference of the International Speech Communication Association (pp. 1596–1600). Graz, Austria.
+[^4]: Granell, E., & Mart ́ınez-Hinarejos, C.-D. (2015). Combining handwriting and speech recognition for transcribing historical handwritten documents. In 13th International Conference on Document Analysis and Recognition (ICDAR) (pp. 126–130).
+[^5]: de la Fuente, C., Valero-Mas, J. J., Castellanos, F. J., & Calvo-Zaragoza, J. (2021). Multimodal image and audio music transcription. Int. J. Multimed. Inf. Retr., (pp. 1–8).
 
 <p align="center">
   <img src="scheme.jpg" alt="content" style="border: 1px solid black; width: 800px;">
