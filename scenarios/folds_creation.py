@@ -265,3 +265,82 @@ def filter_samples(
         f"For this fold, only {len(new_set)} samples have a Symbol Error Rate lower than or equal to {symer_threshold}"
     )
     return new_set
+
+
+# Utility function for obtaining model predictions and
+# creating a new subset based on the corresponding error prediction
+# This function is used for Scenarios 2, 3, 5, 6, 8, and 9
+def create_folds_with_train_and_test_subset(
+    train_p_size: float,
+    scenario: str,
+    symer_threshold: int = 30,
+):
+    # Check if scenario exists
+    if not check_scenario_exists(scenario):
+        keras.backend.clear_session()
+        gc.collect()
+
+        task = "amt"
+
+        # ---------- PRINT EXPERIMENT DETAILS
+
+        print(f"5-fold test performance experiment to create scenario {scenario}")
+        print(f"\tTask: {task}")
+        print(f"\tNew train partition size: {train_p_size}%")
+        print(f"\tSym-ER threshold for test partition: {symer_threshold}")
+
+        # ---------- FOLDS COLLECTION
+
+        folds = get_folds_filenames("X")  # Original test partition
+
+        # ---------- 5-FOLD EVALUATION
+
+        new_set = {}
+        for id, test_fold in enumerate(folds["test"]):
+            # With 'clear_session()' called at the beginning,
+            # Keras starts with a blank state at each iteration
+            # and memory consumption is constant over time.
+            keras.backend.clear_session()
+            gc.collect()
+
+            print(f"Fold {id}")
+
+            # Get the current fold data
+            test_images, test_labels = get_datafold_filenames(
+                task=task, fold_filename=test_fold
+            )
+            print(f"Test size: {len(test_images)}")
+
+            # Check and retrieve vocabulary
+            _, i2w = check_and_retrive_vocabulary(fold_id=id)
+
+            # Get prediction model
+            pred_model_filepath = f"results/scenarioX/fold{id}"
+            pred_model_filepath = os.path.join(
+                pred_model_filepath, f"best_{task}_model.keras"
+            )
+            assert os.path.exists(
+                pred_model_filepath
+            ), "Model from scenario X not found!"
+            prediction_model = keras.models.load_model(pred_model_filepath)
+
+            # Evaluate model and add to the new set the samples whose prediction error is lower than or equal to threshold
+            new_set[id] = filter_samples(
+                task=task,
+                model=prediction_model,
+                images_files=test_images,
+                labels_files=test_labels,
+                i2w=i2w,
+                symer_threshold=symer_threshold,
+            )
+
+            # Clear memory
+            del test_images, test_labels
+            del prediction_model
+
+        # Create 5-folds using new set samples
+        write_folds(new_set, train_p_size, scenario)
+
+    else:
+        print(f"Scenario {scenario} already exists! Using existing folds.")
+        pass
