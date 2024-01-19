@@ -1,21 +1,19 @@
-# -*- coding: utf-8 -*-
-
-import os, gc
+import os
+import gc
 
 import pandas as pd
 import numpy as np
 
-import config
-from evaluation import compute_metrics
-from kaldi_preprocessing import parse_kaldi_groundtruth
+from networks.test import compute_metrics
+from my_utils.kaldi_preprocessing import parse_kaldi_groundtruth
 
 # Confusion Network Combination
 # Combining Handwriting and Speech Recognition for Transcribing Historical Handwritten Documents
 # Emilio Granell and Carlos-D. Martinez-Hinarejos
 
-# A Confusion Network is a weighted directed graph, in which each path goes through all the nodes. 
-# The words and their probabilities are stored in the edges, and the total probability of the words 
-# contained in a subnetwork (all edges between two consecutive nodes) sum 1. 
+# A Confusion Network is a weighted directed graph, in which each path goes through all the nodes.
+# The words and their probabilities are stored in the edges, and the total probability of the words
+# contained in a subnetwork (all edges between two consecutive nodes) sum 1.
 # Aspect of a Confusion Network:
 # CNX -> Class Number X ; PCNX -> Probability of Class Number X
 # ID_SAMPLE [ CN1 PCN1 ] [ CN1 PCN1 ] [ CN1 PCN1 CN2 PCN2 ] [ CN1 PCN1 ] [ CN1 PCN1 ]
@@ -25,7 +23,7 @@ from kaldi_preprocessing import parse_kaldi_groundtruth
 # WORKFLOW
 # ----
 # FIRST PART -> Dynamic Time Warping (DTW) based alignment
-# We obtain (i) the cost matrix, which indicates the Symbol Error Rate between all the possible combinations between a SN of the first CN and another SN of the second CN; 
+# We obtain (i) the cost matrix, which indicates the Symbol Error Rate between all the possible combinations between a SN of the first CN and another SN of the second CN;
 # and (ii) the best alignment path, which aligns each SN of the first CN with another SN of the second CN, so that the cost of this alignment is the lowest possible.
 # ----
 # SECOND PART -> Subnetworks based alignment
@@ -37,11 +35,11 @@ from kaldi_preprocessing import parse_kaldi_groundtruth
 # Tie breaking rule for insertion or deletion -> We look for the highest probability and follow the threshold policy of the paper.
 # We perform this subnetwork classification in both directions of the best alignment path, from left to right and from right to left.
 # We take only as "Anchor" subnetworks those where both searches coincide.
-# Tie breaking rule for one-to-many matches: Anchor > Combine > Insert/Delete. That is if a subnetwork is classified as both "Anchor" and "Insert/Delete", 
+# Tie breaking rule for one-to-many matches: Anchor > Combine > Insert/Delete. That is if a subnetwork is classified as both "Anchor" and "Insert/Delete",
 # we keep the label that minimizes the alignment cost -> "Anchor" label.
 # ----
 # THIRD PART -> Composition of the final confusion network
-# We go through the best alignment path and insert first only "Anchor" subnetworks and then the rest. 
+# We go through the best alignment path and insert first only "Anchor" subnetworks and then the rest.
 
 # Kaldi extra vocabulary:
 # <eps> -> Means "no symbol here". It is the "*DELETE*" of the paper.
@@ -51,6 +49,7 @@ from kaldi_preprocessing import parse_kaldi_groundtruth
 # </s> 1170 -> Indicates the end of a sequence.
 
 # -------------------- FIRST PART
+
 
 # Utility function for computing the cost (Symbol Error Rate or Intersection) between two subnetworks
 def compute_cost(sn1, sn2, c_type: str):
@@ -62,6 +61,7 @@ def compute_cost(sn1, sn2, c_type: str):
     elif c_type == "instersection":
         # cost == Intersection
         return 0 if len(list(set(sn1_syms).intersection(set(sn2_syms)))) > 0 else 1
+
 
 # Utility function for obtaining the cost matrix of two subnetworks and the best DTW path for aligning them together
 # Source: https://towardsdatascience.com/dynamic-time-warping-3933f25fcdd
@@ -81,7 +81,11 @@ def dtw(cn1, cn2):
             cost = compute_cost(cn1[i - 1], cn2[j - 1], c_type="ser")
             cost_matrix[i - 1, j - 1] = cost
             # Compute the "minimum cost" to achieve the current cost
-            neighbors = [dtw_matrix[i - 1, j], dtw_matrix[i, j - 1], dtw_matrix[i - 1, j - 1]]
+            neighbors = [
+                dtw_matrix[i - 1, j],
+                dtw_matrix[i, j - 1],
+                dtw_matrix[i - 1, j - 1],
+            ]
             last_min = min(neighbors)
             dtw_matrix[i, j] = cost + last_min
             # Compute best neighbor
@@ -93,30 +97,32 @@ def dtw(cn1, cn2):
     while not (i == j == 0):
         path.append((i - 1, j - 1))
         v = path_matrix[i, j]
-        i = i if v == 1 else i - 1 
-        j = j if v == 0 else j - 1 
+        i = i if v == 1 else i - 1
+        j = j if v == 0 else j - 1
     path.reverse()
     return cost_matrix, path
 
+
 # -------------------- SECOND PART
+
 
 # Utility function for performing tie breaking rule over subnetworks classified as "Insert/Delete"
 def insertion_or_deletion_labeling(sn, modality):
     sn_type = ""
-    insert_threshold = 0.25 # Most probable class of the second modality exceeds this threshold -> Insert
-    delete_threshold = 0.75 # Most probable class of the first modality does not reach this threshold -> Delete
+    insert_threshold = 0.25  # Most probable class of the second modality exceeds this threshold -> Insert
+    delete_threshold = 0.75  # Most probable class of the first modality does not reach this threshold -> Delete
     # sn = [class-1 prob-1 class-2 prob-2] -> sn_dict = {"class-1": prob-1, "class-2": prob-2}
     sn_dict = dict(zip(sn[0::2], sn[1::2]))
     # Find the most probable class of the subnetwork
     most_prob_c = max(sn_dict.values())
-    if modality==1:
+    if modality == 1:
         if most_prob_c > delete_threshold:
             # Insert
             sn_type = "Insert"
         else:
             # Delete
             sn_type = "Delete"
-    elif modality==2:
+    elif modality == 2:
         if most_prob_c > insert_threshold:
             # Insert
             sn_type = "Insert"
@@ -124,6 +130,7 @@ def insertion_or_deletion_labeling(sn, modality):
             # Delete
             sn_type = "Delete"
     return sn_type
+
 
 # Utility function for labeling subnetworks as either "Anchor", or "Combine", or "Insert/Delete"
 def subnetworks_labeling(cn1, cn2, cost_matrix, path):
@@ -153,10 +160,13 @@ def subnetworks_labeling(cn1, cn2, cost_matrix, path):
             else:
                 # They completely disagree
                 # We classify them as "Insert" or "Delete"
-                sn1_type, sn2_type = insertion_or_deletion_labeling(cn1[i], modality=1), insertion_or_deletion_labeling(cn2[j], modality=2)
-        cn1_type[sn1_type].append(i)    
-        cn2_type[sn2_type].append(j) 
+                sn1_type, sn2_type = insertion_or_deletion_labeling(
+                    cn1[i], modality=1
+                ), insertion_or_deletion_labeling(cn2[j], modality=2)
+        cn1_type[sn1_type].append(i)
+        cn2_type[sn2_type].append(j)
     return cn1_type, cn2_type
+
 
 # Utility function for reversing a "cn_type" dictionary
 # Example:
@@ -168,6 +178,7 @@ def reverse_dict(cn_type):
         for v in cn_type[k]:
             cn_type_reverse[int(v)] = k
     return cn_type_reverse
+
 
 # Utility function for merging the labeling in both directions of a confusion network
 def subnetworks_labeling_alignment(cn, cn_type_1, cn_type_2):
@@ -199,6 +210,7 @@ def subnetworks_labeling_alignment(cn, cn_type_1, cn_type_2):
                             # print(f"Now, subnetwork {sn} is classified only as {j}")
     return reverse_dict(cn_type)
 
+
 # Utility function for performing a subnetworks based alignment
 def subnetworks_based_alignment(cn1, cn2, cost_matrix, path):
     # Label subnetworks in both directions
@@ -209,11 +221,14 @@ def subnetworks_based_alignment(cn1, cn2, cost_matrix, path):
     cn2_type = subnetworks_labeling_alignment(cn2, cn2_type_1, cn2_type_2)
     return cn1_type, cn2_type
 
+
 # -------------------- THIRD PART
+
 
 def set_weight_factor(value=0.5):
     global weight_factor
     weight_factor = round(value, 1)
+
 
 # Utility function for computing the final probability of a class given their probabilities in other subnetworks (used when those subnetworks are combined)
 def smooth_probability(prob_c_sn1, prob_c_sn2, n1, n2):
@@ -222,6 +237,7 @@ def smooth_probability(prob_c_sn1, prob_c_sn2, n1, n2):
     prob_c_sn2 = (prob_c_sn2 + granularity_factor) / (1 + n2 * granularity_factor)
     # weight_factor = 0.5
     return pow(prob_c_sn1, weight_factor) * pow(prob_c_sn2, round(1 - weight_factor, 1))
+
 
 # Utility function for combining two subnetworks: f(sn1, sn2) -> sn
 def combine_subnetworks(sn1, sn2):
@@ -234,7 +250,9 @@ def combine_subnetworks(sn1, sn2):
     sn_c = set(sn1[0::2] + sn2[0::2])
     n1, n2 = len(sn1[0::2]), len(sn2[0::2])
     # Smooth and normalize the probabilities of the classes of the combined subnetwork
-    probs = [smooth_probability(sn1_dict.get(c, 0), sn2_dict.get(c, 0), n1, n2) for c in sn_c]
+    probs = [
+        smooth_probability(sn1_dict.get(c, 0), sn2_dict.get(c, 0), n1, n2) for c in sn_c
+    ]
     probs_normalized = [p / sum(probs) for p in probs]
     # Create the combined subnetwork
     sn = []
@@ -242,6 +260,7 @@ def combine_subnetworks(sn1, sn2):
         sn.append(c)
         sn.append(prob_c)
     return sn
+
 
 # Utility function for merging two aligned subnetworks into a new one
 def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
@@ -261,13 +280,15 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
     for id, (i, j) in enumerate(path):
         # We only fill in the empty gaps
         if cn[id][0] == [] and cn[id][1] == []:
-            # Both subnetworks are of the same type 
+            # Both subnetworks are of the same type
             # Combine-Combine, Insert-Insert, Delete-Delete
             if cn1_type[int(i)] == cn2_type[int(j)]:
                 if cn1_type[int(i)] == "Combine":
                     sn1, sn2 = combine_subnetworks(cn1[i], cn2[j]), ["-"]
                 elif cn1_type[int(i)] == "Insert" or cn1_type[int(i)] == "Delete":
-                    sn1, sn2 = combine_subnetworks(cn1[i], eps_sn), combine_subnetworks(eps_sn, cn2[j])
+                    sn1, sn2 = combine_subnetworks(cn1[i], eps_sn), combine_subnetworks(
+                        eps_sn, cn2[j]
+                    )
             # Subnetworks are of different type
             # Anchor-Combine, Anchor-Insert, Anchor-Delete, Combine-Insert, Combine-Delete, Insert-Delete
             else:
@@ -276,15 +297,31 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
                     # The "Anchor" subnetwork has been inserted already
                     if cn1_type[int(i)] == "Anchor":
                         sn1 = ["-"]
-                        sn2 = combine_subnetworks(cn1[i], cn2[j]) if cn2_type[int(j)] == "Combine" else combine_subnetworks(eps_sn, cn2[j])
+                        sn2 = (
+                            combine_subnetworks(cn1[i], cn2[j])
+                            if cn2_type[int(j)] == "Combine"
+                            else combine_subnetworks(eps_sn, cn2[j])
+                        )
                     elif cn2_type[int(j)] == "Anchor":
-                        sn1 = combine_subnetworks(cn1[i], cn2[j]) if cn1_type[int(i)] == "Combine" else combine_subnetworks(cn1[i], eps_sn)
+                        sn1 = (
+                            combine_subnetworks(cn1[i], cn2[j])
+                            if cn1_type[int(i)] == "Combine"
+                            else combine_subnetworks(cn1[i], eps_sn)
+                        )
                         sn2 = ["-"]
                 # Combine-Insert, Combine-Delete, Insert-Delete
                 else:
                     # NOTE: Assumption! -> When we find a Combine-Insert or a Combine-Delete pair, the Combine subnetwork has another possible combination
-                    sn1 = ["-"] if cn1_type[int(i)] == "Combine" else combine_subnetworks(cn1[i], eps_sn)
-                    sn2 = ["-"] if cn2_type[int(j)] == "Combine" else combine_subnetworks(eps_sn, cn2[j])
+                    sn1 = (
+                        ["-"]
+                        if cn1_type[int(i)] == "Combine"
+                        else combine_subnetworks(cn1[i], eps_sn)
+                    )
+                    sn2 = (
+                        ["-"]
+                        if cn2_type[int(j)] == "Combine"
+                        else combine_subnetworks(eps_sn, cn2[j])
+                    )
             cn[id][0], cn[id][1] = sn1, sn2
 
     # Third, filter the dummy values -> sn = ["-"] and reformat the structure
@@ -295,10 +332,11 @@ def confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type):
 
     return cn
 
+
 # Utility function for following the workflow established to combine two confusion networks
 def combine_confusion_networks(cn1, cn2):
     # FIRST PART
-    # DTW based alignment 
+    # DTW based alignment
     cost_matrix, path = dtw(cn1, cn2)
     # SECOND PART
     # Subnetworks based alignment
@@ -309,13 +347,15 @@ def combine_confusion_networks(cn1, cn2):
     cn = confusion_networks_alignment(path, cn1, cn2, cn1_type, cn2_type)
     return cn
 
+
 # -------------------- UTILS
+
 
 # Utility function for parsing a confusion network file
 # Returns: id = "ID_SAMPLE", out=[[CN1, PCN1], [CN1, PCN1], [CN1, PCN1, CN2, PCN2], [CN1, PCN1], [CN1, PCN1]]
 def confnet_str2list(v: list):
     id, confnet = v[0], v[1:]
-    # Patch for ground-truth data test partition of Fold1 
+    # Patch for ground-truth data test partition of Fold1
     if id == "201009318-1,48_2":
         id = "201009318-1_48_2"
     out = []
@@ -332,18 +372,20 @@ def confnet_str2list(v: list):
             node.append(i)
     return id, out
 
+
 # Utility function for doing the i2w-conversion over the classes of a confusion network
 def confnet_i2w(cn: list, i2w: dict):
     out = []
     for sn in cn:
         new_sn = []
         for id, sym in enumerate(sn):
-            if id%2 == 0:
+            if id % 2 == 0:
                 new_sn.append(i2w[sym])
             else:
                 new_sn.append(sym)
         out.append(new_sn)
     return out
+
 
 # Utility function for greedy decoding a subnetwork
 def confnet_greedy_decoder(cn):
@@ -353,13 +395,19 @@ def confnet_greedy_decoder(cn):
         max_prob = max(probs)
         # See if there is more than one class with the same probability
         ids_max_prob = [id for id, p in enumerate(probs) if p == max_prob]
-        most_prob_c = [classes[i] for i in ids_max_prob if classes[i] not in ["<eps>", "<DUMMY>", "#0"]]
+        most_prob_c = [
+            classes[i]
+            for i in ids_max_prob
+            if classes[i] not in ["<eps>", "<DUMMY>", "#0"]
+        ]
         if most_prob_c != []:
             # We append the first word we find different from "<eps>"
             cn_decoded.append(most_prob_c[0])
     return cn_decoded
 
+
 # -------------------- EXPERIMENT WORKFLOW
+
 
 # Utility function for performing a k-fold cross-validation multimodal experiment on a single dataset
 def k_fold_multimodal_experiment():
@@ -367,12 +415,16 @@ def k_fold_multimodal_experiment():
 
     # ---------- PRINT EXPERIMENT DETAILS
 
-    print("k-fold multimodal image and audio music transcription using confusion networks experiment")
+    print(
+        "k-fold multimodal image and audio music transcription using confusion networks experiment"
+    )
     print(f"Data used {config.base_dir.stem}")
 
     # ---------- K-FOLD EVALUATION
 
-    assert os.listdir(config.output_dir / "omr") == os.listdir(config.output_dir / "amt")
+    assert os.listdir(config.output_dir / "omr") == os.listdir(
+        config.output_dir / "amt"
+    )
 
     # Start the k-fold evaluation scheme
     k = len(os.listdir(config.output_dir / "omr"))
@@ -380,22 +432,34 @@ def k_fold_multimodal_experiment():
         gc.collect()
 
         print(f"Fold {i}")
-        
+
         # Get the current fold data
-        omr_confnets_fnames = sorted([os.path.join(config.output_dir / "omr" / f"Fold{i}" / "CN", fname)  for fname in os.listdir(config.output_dir / "omr" / f"Fold{i}" / "CN")])
-        amt_confnets_fnames = sorted([os.path.join(config.output_dir / "amt" / f"Fold{i}" / "CN", fname)  for fname in os.listdir(config.output_dir / "amt" / f"Fold{i}" / "CN")])
+        omr_confnets_fnames = sorted(
+            [
+                os.path.join(config.output_dir / "omr" / f"Fold{i}" / "CN", fname)
+                for fname in os.listdir(config.output_dir / "omr" / f"Fold{i}" / "CN")
+            ]
+        )
+        amt_confnets_fnames = sorted(
+            [
+                os.path.join(config.output_dir / "amt" / f"Fold{i}" / "CN", fname)
+                for fname in os.listdir(config.output_dir / "amt" / f"Fold{i}" / "CN")
+            ]
+        )
         assert len(omr_confnets_fnames) == len(amt_confnets_fnames)
 
         # Load the current ground-truth data
         # Same file for both models (ofc), so load one of them
-        kaldi_gt_path = config.output_dir / "omr" / f"Fold{i}" / "kaldi" / "grnTruth.dat"
+        kaldi_gt_path = (
+            config.output_dir / "omr" / f"Fold{i}" / "kaldi" / "grnTruth.dat"
+        )
         gt = parse_kaldi_groundtruth(filepath=kaldi_gt_path)
 
         # Load the current fold dictionary
         # Both models have the same fold vocabulary, so load one of them
         w2i_filepath = config.output_dir / "omr" / f"Fold{i}" / "words.txt"
         lines = open(w2i_filepath, "r").readlines()
-        i2w = {int(line.split()[1]):line.split()[0] for line in lines}
+        i2w = {int(line.split()[1]): line.split()[0] for line in lines}
 
         # Set filepaths outputs
         output_dir = config.output_dir / "ResultsCN" / f"Fold{i}"
@@ -404,27 +468,39 @@ def k_fold_multimodal_experiment():
 
         symer_acc = []
         seqer_acc = []
-        wfs = np.linspace(0,1,11)
+        wfs = np.linspace(0, 1, 11)
         # Iterate over the range for the weight factor -> granularity step = 0.1
         for wf in wfs:
             # Set weight factor
             set_weight_factor(wf)
-            print(f"Weight factor for OMR: {weight_factor}, Weight factor for AMT: {round(1 - weight_factor, 1)}")
+            print(
+                f"Weight factor for OMR: {weight_factor}, Weight factor for AMT: {round(1 - weight_factor, 1)}"
+            )
             # Multimodal transcription evaluation
             labels_files = []
             y_pred_acc = []
-            for omr_confnet_filepath, amt_confnet_filepath in zip(omr_confnets_fnames, amt_confnets_fnames):
-                id_omr, omr_confnet = confnet_str2list(open(omr_confnet_filepath, "r").read().split())
-                id_amt, amt_confnet = confnet_str2list(open(amt_confnet_filepath, "r").read().split())
+            for omr_confnet_filepath, amt_confnet_filepath in zip(
+                omr_confnets_fnames, amt_confnets_fnames
+            ):
+                id_omr, omr_confnet = confnet_str2list(
+                    open(omr_confnet_filepath, "r").read().split()
+                )
+                id_amt, amt_confnet = confnet_str2list(
+                    open(amt_confnet_filepath, "r").read().split()
+                )
                 assert id_omr == id_amt
                 labels_files.append(id_omr)
-                combined_confnet = combine_confusion_networks(confnet_i2w(omr_confnet, i2w), confnet_i2w(amt_confnet, i2w))
+                combined_confnet = combine_confusion_networks(
+                    confnet_i2w(omr_confnet, i2w), confnet_i2w(amt_confnet, i2w)
+                )
                 y_pred_acc.append(confnet_greedy_decoder(combined_confnet))
             # Obtain true labels: we make sure they are in the same order as their correspoding y_pred partner
             y_true_acc = [gt[i] for i in labels_files]
             # Compute metrics
             symer, seqer = compute_metrics(y_true_acc, y_pred_acc)
-            print(f"SymER (%): {symer:.2f}, SeqER (%): {seqer:.2f} - From {len(y_true_acc)} samples")
+            print(
+                f"SymER (%): {symer:.2f}, SeqER (%): {seqer:.2f} - From {len(y_true_acc)} samples"
+            )
             symer_acc.append(symer)
             seqer_acc.append(seqer)
         # Save fold logs
@@ -432,14 +508,15 @@ def k_fold_multimodal_experiment():
             "omr_weight_factor": [round(wf, 1) for wf in wfs],
             "amt_weight_factor": [round(1 - wf, 1) for wf in wfs],
             "symer": symer_acc,
-            "seqer": seqer_acc
+            "seqer": seqer_acc,
         }
         logs = pd.DataFrame.from_dict(logs)
         logs.to_csv(log_path, index=False)
 
     return
 
-# if __name__ == "__main__": 
+
+# if __name__ == "__main__":
 #     cn1 = [["<s>", 1.0], ["A", 0.559, "E", 0.294, "<eps>", 0.147], ["AGORA", 1.0], ["CUENTA", 1.0], ["LABRADORES", 0.918, "LA", 0.082], ["</s>", 1.0]]
 #     cn2 = [["<s>", 1.0], ["AGORA", 1.0], ["CUENTA", 1.0], ["EL", 0.657, "LA", 0.343], ["HISTORIA", 1.0], ["</s>", 1.0]]
 #     set_weight_factor()
