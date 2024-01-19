@@ -102,13 +102,16 @@ def get_datafold_filenames(
     return images_filenames, labels_filenames
 
 
+# Check if w2i dictionary exists for a given fold
+# If it does, retrieve it
+# If it does not, create it from the train partition of Scenario X
 def check_and_retrive_vocabulary(fold_id: int) -> Tuple[Dict[str, int], Dict[int, str]]:
     w2i_path = os.path.join(VOCABS_DIR, f"w2i_fold{fold_id}.json")
     if os.path.exists(w2i_path):
         w2i, i2w = load_dictionaries(filepath=w2i_path)
     else:
-        # Use ScenarioD train files
-        folds = get_folds_filenames("D")
+        # Use ScenarioX train files
+        folds = get_folds_filenames("X")
         _, labels_filenames = get_datafold_filenames(
             task="omr", fold_filename=folds["train"][fold_id]
         )
