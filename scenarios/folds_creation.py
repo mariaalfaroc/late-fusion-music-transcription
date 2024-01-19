@@ -175,11 +175,26 @@ def check_scenario_exists(scenario: str):
     return exist
 
 
+# Utility function for creating a random subset of the original train partition of Scenario X
+def create_and_write_subset_train_folds(
+    original_train_folds: List[str],
+    p_size: float,
+    scenario: str,
+):
+    for f in original_train_folds:
+        with open(f, "r") as dat:
+            samples = dat.read().splitlines()
+        new_size = int(len(samples) * p_size / 100)
+        new_samples = random.sample(samples, k=new_size)
+        with open(f.replace("ScenarioX", f"Scenario{scenario}"), "w") as new_dat:
+            new_dat.write("\n".join(new_samples))
+
+
 # Utility function for creating 5-folds with train,
 # validation, and test partitions for Scenarios 1, 4 and 7
-# Validation and test partitions are those of Sceneario X
+# Validation and test partitions are those of Scenario X
 # Train is a random subset of the original train partition of Scenario X
-def create_a_and_b_folds(p_size: float, scenario: str):
+def create_folds_with_train_subset(p_size: float, scenario: str):
     # Check if the scenario already exists
     if not check_scenario_exists(scenario):
         # Obtain folds for ScenarioX
@@ -190,13 +205,31 @@ def create_a_and_b_folds(p_size: float, scenario: str):
         for f in folds["val"] + folds["test"]:
             shutil.copyfile(f, f.replace("ScenarioX", f"Scenario{scenario}"))
         # Create new train folds
-        for f in folds["train"]:
-            with open(f, "r") as dat:
-                samples = dat.read().splitlines()
-            new_size = int(len(samples) * p_size / 100)
-            new_samples = random.sample(samples, k=new_size)
-            with open(f.replace("ScenarioX", f"Scenario{scenario}"), "w") as new_dat:
-                new_dat.write("\n".join(new_samples))
+        create_and_write_subset_train_folds(folds["train"], p_size, scenario)
     else:
         print(f"Scenario {scenario} already exists! Using existing folds.")
         pass
+
+
+##################################### SCENARIOS 2, 3, 5, 6, 8, AND 9
+
+
+# Utility function for writing 5-folds with train,
+# validation, and test partitions for Scenario 2, 3, 5, 6, 8, and 9
+# Train is a random subset of the original train partition of Scenario X
+# Validation partitions are those of Sceneario X
+# Test samples are passed as argument
+def write_folds(test_samples: Dict[int, List[str]], train_p_size: float, scenario: str):
+    # Obtain folds for ScenarioX
+    folds = get_folds_filenames("X")
+    # Create Scenario{scenario} folder
+    os.makedirs(f"scenarios/Scenario{scenario}", exist_ok=True)
+    # Create new train folds
+    create_and_write_subset_train_folds(folds["train"], train_p_size, scenario)
+    # Copy val folds
+    for f in folds["val"]:
+        shutil.copyfile(f, f.replace("ScenarioX", f"Scenario{scenario}"))
+    # Create new test folds
+    for id, samples in test_samples.items():
+        with open(f"scenarios/Scenario{scenario}/test_gt_fold{id}.dat", "w") as dat:
+            dat.write("\n".join(samples))
