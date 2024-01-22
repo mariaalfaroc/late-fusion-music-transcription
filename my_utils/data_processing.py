@@ -1,3 +1,4 @@
+import joblib
 from typing import List, Dict, Tuple, Union
 
 import cv2
@@ -6,6 +7,8 @@ import numpy as np
 from sklearn.utils import shuffle
 
 from networks.models import INPUT_HEIGHT, POOLING_FACTORS
+
+MEMORY = joblib.memory.Memory("./joblib_cache", mmap_mode="r", verbose=0)
 
 
 ################################################################# INPUT DATA PREPROCESSING:
@@ -21,6 +24,7 @@ def resize_image(image: np.ndarray, new_height: int) -> np.ndarray:
 # 2) Convert to grayscale
 # 3) Normalize
 # 4) Resize preserving aspect ratio
+@MEMORY.cache
 def preprocess_image(image_path: str) -> Tuple[np.ndarray, int]:
     img = cv2.imread(image_path, 0)  # Read as grayscale
     img = (255.0 - img) / 255.0
@@ -35,6 +39,7 @@ def preprocess_image(image_path: str) -> Tuple[np.ndarray, int]:
 # 2) Obtain CQT spectrogram
 # 3) Normalize
 # 4) Resize preserving aspect ratio
+@MEMORY.cache
 def preprocess_audio(audio_path: str) -> Tuple[np.ndarray, int]:
     audio, sr = librosa.load(audio_path, sr=22050)
     spec = librosa.cqt(
